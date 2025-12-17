@@ -1,4 +1,4 @@
-﻿#include <iostream>
+#include <iostream>
 #include <vector>
 #include <complex>
 #include <cmath>
@@ -18,7 +18,7 @@ using Complex = complex<double>;
 
 // Реализация DFT и IDFT
 vector<Complex> DFT(const vector<Complex>& input) {
-    int N = input.size();
+    int N = static_cast<int>(input.size());
     vector<Complex> output(N);
     for (int k = 0; k < N; ++k) {
         Complex sum(0, 0);
@@ -32,7 +32,7 @@ vector<Complex> DFT(const vector<Complex>& input) {
 }
 
 vector<Complex> IDFT(const vector<Complex>& input) {
-    int N = input.size();
+    int N = static_cast<int>(input.size());
     vector<Complex> output(N);
     for (int n = 0; n < N; ++n) {
         Complex sum(0, 0);
@@ -45,29 +45,80 @@ vector<Complex> IDFT(const vector<Complex>& input) {
     return output;
 }
 
-// Реализация FFT и IFFT (in-place)
-void FFT(vector<Complex>& a) {
-    int N = a.size();
+//реализация FFT 
+void FFT(vector<Complex>& x, int N, int start, int step) {
     if (N <= 1) return;
-    vector<Complex> even(N / 2), odd(N / 2);
-    for (int i = 0; i < N / 2; ++i) {
-        even[i] = a[i * 2];
-        odd[i] = a[i * 2 + 1];
-    }
-    FFT(even);
-    FFT(odd);
-    for (int k = 0; k < N / 2; ++k) {
-        Complex t = polar(1.0, -2 * PI * k / N) * odd[k];
-        a[k] = even[k] + t;
-        a[k + N / 2] = even[k] - t;
+
+    int M = N / 2;
+
+    // Рекурсивные вызовы для чётных и нечётных компонент
+    FFT(x, M, start, step * 2);           // Чётные: x[start], x[start + 2*step], ...
+    FFT(x, M, start + step, step * 2);    // Нечётные: x[start + step], x[start + 3*step], ...
+
+    // Объединение результатов 
+    double angle_step = -2.0 * PI / static_cast<double>(N);
+    Complex w_step(cos(angle_step), sin(angle_step));
+    Complex w(1.0, 0.0);
+
+    for (int m = 0; m < M; ++m) {
+        // Индексы для чётных и нечётных элементов
+        int idx_even = start + step * (2 * m);
+        int idx_odd = start + step * (2 * m + 1);
+
+        Complex u = x[idx_even];
+        Complex v = x[idx_odd];
+        Complex t = w * v;
+
+        // z[m] = u[m] + w * v[m]
+        // z[m + M] = u[m] - w * v[m]
+        x[idx_even] = u + t;  
+        x[idx_odd] = u - t;     
+
+        w *= w_step;  // обновление коэффициента вращения
     }
 }
 
-void IFFT(vector<Complex>& a) {
-    int N = a.size();
-    for (auto& x : a) x = conj(x);
-    FFT(a);
-    for (auto& x : a) x = conj(x) / static_cast<double>(N);
+void FFT(vector<Complex>& x) {
+    int N = static_cast<int>(x.size());
+    if (N <= 1) return;
+
+    // Проверка, что размер является степенью двойки
+    if ((N & (N - 1)) != 0) {
+        // Дополнение нулями до ближайшей степени двойки
+        int newSize = 1;
+        while (newSize < N) newSize <<= 1;
+        x.resize(newSize, Complex(0, 0));
+        N = newSize;
+    }
+
+    FFT(x, N, 0, 1);
+}
+
+// Обратное преобразование Фурье (IFFT)
+void IFFT(vector<Complex>& X) {
+    int N = static_cast<int>(X.size());
+    if (N <= 1) return;
+
+    // Проверка, что размер является степенью двойки
+    if ((N & (N - 1)) != 0) {
+        // Дополнение нулями до ближайшей степени двойки
+        int newSize = 1;
+        while (newSize < N) newSize <<= 1;
+        X.resize(newSize, Complex(0, 0));
+        N = newSize;
+    }
+
+    // Используем свойство: IFFT(X) = (1/N) * conj(FFT(conj(X)))
+    for (int i = 0; i < N; ++i) {
+        X[i] = conj(X[i]);
+    }
+
+    FFT(X, N, 0, 1);
+
+    double norm = 1.0 / static_cast<double>(N);
+    for (int i = 0; i < N; ++i) {
+        X[i] = conj(X[i]) * norm;
+    }
 }
 
 // Генерация зашумленного сигнала
@@ -135,7 +186,7 @@ vector<Complex> removeHighFrequencyNoise(const vector<Complex>& Z) {
     vector<Complex> Z_filtered = Z;
 
     int m_noise1 = 197;
-    int m_noise2 = N - 197; 
+    int m_noise2 = N - 197;
 
     Z_filtered[m_noise1] = Complex(0, 0);
     Z_filtered[m_noise2] = Complex(0, 0);
@@ -227,6 +278,10 @@ int main() {
     }
     cout << "Максимальная разница между DFT и FFT: " << max_diff << endl;
     if (max_diff < 1e-10) {
+        cout << "   DFT и FFT дают идентичные результаты\n";
+    }
+    else {
+        cout << "   DFT и FFT дают немного разные результаты\n";
     }
 
     // Обнуление конкретных шумовых компонентов
@@ -252,6 +307,13 @@ int main() {
     // Сохранение данных для второй задачи
     string file2 = desktopPath + "signal2_data.txt";
     saveToFile(file2, z2);
+
+    cout << "\n   Данные сохранены в папке: " << desktopPath << endl;
+    cout << "   Файлы:\n";
+    cout << "   - signal_data.txt (исходный и фильтрованный сигнал)\n";
+    cout << "   - signal2_data.txt (сигнал с разрывами)\n";
+    cout << "   - spectrum_before.txt (спектр до фильтрации)\n";
+    cout << "   - spectrum_after.txt (спектр после фильтрации)\n";
 
     return 0;
 }
